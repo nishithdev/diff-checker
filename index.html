@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Diff Checker with Char-level Diff</title>
+  <style>
+    body {
+      font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+      background: #f3f4f6;
+      margin: 0;
+      padding: 20px;
+      color: #111827;
+    }
+
+    h1 {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    .input-container {
+      display: flex;
+      flex-direction: row;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    .text-column {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    textarea {
+      width: 100%;
+      height: 200px;
+      padding: 12px;
+      font-family: monospace;
+      font-size: 14px;
+      resize: vertical;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      background-color: white;
+    }
+
+    h3 {
+      margin-bottom: 6px;
+      text-align: center;
+    }
+
+    .diff-actions {
+      text-align: center;
+      margin-bottom: 20px;
+    }
+
+    button {
+      padding: 10px 16px;
+      font-size: 14px;
+      margin: 0 10px;
+      background-color: #2563eb;
+      border: none;
+      border-radius: 6px;
+      color: white;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+    }
+
+    button:hover {
+      background-color: #1e40af;
+    }
+
+    .diff-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: monospace;
+      table-layout: fixed;
+    }
+
+    .diff-table th,
+    .diff-table td {
+      padding: 8px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      vertical-align: top;
+    }
+
+    .diff-table th {
+      width: 40px;
+      text-align: right;
+      color: #6b7280;
+      background-color: #f9fafb;
+    }
+
+    .line-added {
+      background-color: #e6ffed;
+    }
+
+    .line-removed {
+      background-color: #ffeef0;
+    }
+
+    .line-changed {
+      background-color: #fff8dc;
+    }
+
+    .line-equal {
+      background-color: white;
+    }
+
+    /* Left side only red for removed and changed */
+    .left-word-removed {
+      background-color: #fecaca;
+    }
+
+    .left-char-removed {
+      background-color: #fca5a5;
+    }
+
+    /* Right side only green for added and changed */
+    .right-word-added {
+      background-color: #bbf7d0;
+    }
+
+    .right-char-added {
+      background-color: #a7f3d0;
+    }
+
+    pre {
+      margin: 0;
+      font-family: inherit;
+    }
+
+    @media (max-width: 768px) {
+      .input-container {
+        flex-direction: column;
+      }
+
+      button {
+        margin-top: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Diff Checker</h1>
+
+  <div class="input-container">
+    <div class="text-column">
+      <h3>Original Text</h3>
+      <textarea id="leftText" placeholder="Enter original text..."></textarea>
+    </div>
+    <div class="text-column">
+      <h3>Modified Text</h3>
+      <textarea id="rightText" placeholder="Enter modified text..."></textarea>
+    </div>
+  </div>
+
+  <div class="diff-actions">
+    <button onclick="clearAll()">Clear</button>
+    <button onclick="compare()">Compare</button>
+  </div>
+
+  <table class="diff-table" id="diffOutput"></table>
+
+  <script>
+    function escapeHtml(str) {
+      return str.replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;");
+    }
+
+    // Char-level diff between two strings: array of {type, text}
+    function charDiff(a, b) {
+      const result = [];
+      const aLen = a.length;
+      const bLen = b.length;
+      let i = 0, j = 0;
+
+      while(i < aLen || j < bLen) {
+        if(i < aLen && j < bLen && a[i] === b[j]) {
+          let startI = i;
+          while(i < aLen && j < bLen && a[i] === b[j]) {
+            i++; j++;
+          }
+          result.push({type:'equal', text: a.slice(startI, i)});
+        } else {
+          let nextMatchA = a.indexOf(b[j], i);
+          let nextMatchB = b.indexOf(a[i], j);
+
+          if(j >= bLen || (nextMatchA !== -1 && (nextMatchA - i) <= (nextMatchB === -1 ? Infinity : nextMatchB - j))) {
+            if(i < aLen) {
+              result.push({type:'removed', text: a[i]});
+              i++;
+            }
+          } else if(i >= aLen || (nextMatchB !== -1 && (nextMatchB - j) < (nextMatchA === -1 ? Infinity : nextMatchA - i))) {
+            if(j < bLen) {
+              result.push({type:'added', text: b[j]});
+              j++;
+            }
+          } else {
+            if(i < aLen) {
+              result.push({type:'removed', text: a[i]});
+              i++;
+            }
+            if(j < bLen) {
+              result.push({type:'added', text: b[j]});
+              j++;
+            }
+          }
+        }
+      }
+      return result;
+    }
+
+    // Char-level diff HTML for left side (only red for removed)
+    function charDiffHtmlLeft(a, b) {
+      const diff = charDiff(a, b);
+      let html = '';
+      diff.forEach(part => {
+        const escapedText = escapeHtml(part.text);
+        if (part.type === 'equal') {
+          html += escapedText;
+        } else if (part.type === 'removed') {
+          html += `<span class="left-char-removed">${escapedText}</span>`;
+        }
+        // ignore added chars on left side (don't highlight)
+      });
+      return html;
+    }
+
+    // Char-level diff HTML for right side (only green for added)
+    function charDiffHtmlRight(a, b) {
+      const diff = charDiff(a, b);
+      let html = '';
+      diff.forEach(part => {
+        const escapedText = escapeHtml(part.text);
+        if (part.type === 'equal') {
+          html += escapedText;
+        } else if (part.type === 'added') {
+          html += `<span class="right-char-added">${escapedText}</span>`;
+        }
+        // ignore removed chars on right side (don't highlight)
+      });
+      return html;
+    }
+
+    // Word-level diff with char-level inside changed words
+    function wordDiff(left, right) {
+      const leftWords = left.split(/(\s+)/);
+      const rightWords = right.split(/(\s+)/);
+      const maxLen = Math.max(leftWords.length, rightWords.length);
+
+      let leftHtml = '';
+      let rightHtml = '';
+
+      for (let i = 0; i < maxLen; i++) {
+        const lWord = leftWords[i] ?? '';
+        const rWord = rightWords[i] ?? '';
+
+        if(lWord === rWord) {
+          leftHtml += escapeHtml(lWord);
+          rightHtml += escapeHtml(rWord);
+        } else {
+          if(lWord.trim() === '' && rWord.trim() === '') {
+            // both whitespace but different amount
+            leftHtml += escapeHtml(lWord);
+            rightHtml += escapeHtml(rWord);
+          } else {
+            // Left side - show removed words/characters in red, ignore added chars
+            if(lWord) {
+              leftHtml += `<span class="left-word-removed">${charDiffHtmlLeft(lWord, rWord)}</span>`;
+            }
+            // Right side - show added words/characters in green, ignore removed chars
+            if(rWord) {
+              rightHtml += `<span class="right-word-added">${charDiffHtmlRight(lWord, rWord)}</span>`;
+            }
+          }
+        }
+      }
+
+      return [leftHtml, rightHtml];
+    }
+
+    function compare() {
+      const leftLines = document.getElementById('leftText').value.split('\n');
+      const rightLines = document.getElementById('rightText').value.split('\n');
+      const output = document.getElementById('diffOutput');
+      output.innerHTML = '';
+
+      const maxLength = Math.max(leftLines.length, rightLines.length);
+
+      for(let i=0; i<maxLength; i++) {
+        const left = leftLines[i] ?? '';
+        const right = rightLines[i] ?? '';
+
+        let rowType = 'line-equal';
+        if(left !== right) {
+          if(left && !right) rowType = 'line-removed';
+          else if(!left && right) rowType = 'line-added';
+          else rowType = 'line-changed';
+        }
+
+        const row = document.createElement('tr');
+        row.className = rowType;
+
+        const lineNum = document.createElement('th');
+        lineNum.textContent = i + 1;
+        row.appendChild(lineNum);
+
+        const leftCell = document.createElement('td');
+        const rightCell = document.createElement('td');
+
+        if(rowType === 'line-changed') {
+          const [leftDiffHtml, rightDiffHtml] = wordDiff(left, right);
+          leftCell.innerHTML = `<pre>${leftDiffHtml}</pre>`;
+          rightCell.innerHTML = `<pre>${rightDiffHtml}</pre>`;
+        } else {
+          leftCell.innerHTML = `<pre>${escapeHtml(left)}</pre>`;
+          rightCell.innerHTML = `<pre>${escapeHtml(right)}</pre>`;
+        }
+
+        row.appendChild(leftCell);
+        row.appendChild(rightCell);
+        output.appendChild(row);
+      }
+    }
+
+    function clearAll() {
+      document.getElementById('leftText').value = '';
+      document.getElementById('rightText').value = '';
+      document.getElementById('diffOutput').innerHTML = '';
+    }
+  </script>
+</body>
+</html>
